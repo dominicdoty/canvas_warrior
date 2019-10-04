@@ -63,42 +63,15 @@ def get_quizzes(course_id):
 
 # Main Work
 courses = get_courses()
+print(json.dumps(courses, indent=2, separators=(',', ': ')))
 
 # Iterate Over Courses and Get Assignments
-for course in courses:
-    if course['name'] == 'ECEN 4/5013-001: Practical PCB Design and Manufacture':
-        print(course['name'])
-        assignments = get_assignments(course['id'])
-        for assignment in assignments:
-            print('\t{0}'.format(assignment['name']))
-            print('\t\t{0}'.format(assignment['unlock_at']))
-            print('\t\t{0}'.format(assignment['due_at']))
-            print('\t\t{0}'.format(assignment['id']))
-
-# for k, v in courses['course_id'].items():
-    # print('{0}:{1}'.format(k,v))
-
-
-# example request
-# curl https://<canvas>/api/v1/courses/<course_id>/quizzes \
-#      -H 'Authorization: Bearer <token>'
-
-# courses
-# GET /api/v1/courses
-
-# assignments
-# GET /api/v1/courses/:course_id/assignments
-# GET /api/v1/courses/:course_id/assignment_groups/:assignment_group_id/assignments
-
-# quizzes
-# GET /api/v1/courses/:course_id/quizzes
-
-
-## References
-# https://www.digitalocean.com/community/tutorials/how-to-use-web-apis-in-python-3
-# https://docs.python-guide.org/scenarios/json/
-
-# https://canvas.instructure.com/doc/api/all_resources.html
-# https://canvas.instructure.com/doc/api/all_resources.html#method.courses.index
-# https://canvas.instructure.com/doc/api/all_resources.html#method.assignments_api.index
-# https://canvas.instructure.com/doc/api/all_resources.html#method.quizzes/quizzes_api.index
+# for course in courses:
+#     if course.get('access_restricted_by_date', 0) != 'true':
+#         print(course['name'])
+        # assignments = get_assignments(course['id'])
+        # for assignment in assignments:
+        #     print('\t{0}'.format(assignment['name']))
+        #     print('\t\t{0}'.format(assignment['unlock_at']))
+        #     print('\t\t{0}'.format(assignment['due_at']))
+        #     print('\t\t{0}'.format(assignment['id']))
