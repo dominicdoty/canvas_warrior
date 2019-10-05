@@ -12,7 +12,7 @@ home = str(Path.home())
 try:
     f=open("{0}/canvas_access.token".format(home), "r")
 except:
-    print("FATAL: api_token not found or no read permissions in ~/canvas_access.token")
+    print('FATAL: api_token not found or no read permissions in {0}/canvas_access.token'.format(home))
     exit()
 else: 
     if f.mode == 'r':
@@ -50,28 +50,33 @@ def get_assignments(course_id):
         return None
 
 
-# Fetch User Quizzes for a Course
-def get_quizzes(course_id):
-    api_url = '{0}courses/{1}/quizzes'.format(api_url_base, course_id)
-    quizzes = requests.get(api_url, headers=headers)
-
-    if quizzes.status_code == 200:
-        return json.loads(quizzes.content.decode('utf-8'))
-    else:
-        return None
-
+# Check if Assignment is in taskwarrior
+def taskwarrior(course_id, assignment_id):
+    uuid = str(course_id) + str(assignment_id)
+    #check for uuid in taskwarrior files todo or completed
+    #if its there check dates?
+       #if dates and uuid good return None
+       #else check with user to update dates?
+    #else return something?
+    return
 
 # Main Work
 courses = get_courses()
-print(json.dumps(courses, indent=2, separators=(',', ': ')))
+# print(json.dumps(courses, indent=2, separators=(',', ': ')))
 
 # Iterate Over Courses and Get Assignments
-# for course in courses:
-#     if course.get('access_restricted_by_date', 0) != 'true':
-#         print(course['name'])
-        # assignments = get_assignments(course['id'])
-        # for assignment in assignments:
-        #     print('\t{0}'.format(assignment['name']))
-        #     print('\t\t{0}'.format(assignment['unlock_at']))
-        #     print('\t\t{0}'.format(assignment['due_at']))
-        #     print('\t\t{0}'.format(assignment['id']))
+for course in courses:
+    if (course.get('access_restricted_by_date') == None and
+        course['enrollments'][0]['type'] == 'student' and
+        course['enrollments'][0]['enrollment_state'] == 'active'):
+        
+        print(course['name'])
+        assignments = get_assignments(course['id'])
+
+        for assignment in assignments:
+            print('\t{0}'.format(assignment['name']))
+            print('\t\t{0}'.format(assignment['unlock_at']))
+            print('\t\t{0}'.format(assignment['due_at']))
+            print('\t\t{0}'.format(assignment['id']))
+
+# write to [canvas: "assignment uuid"]
