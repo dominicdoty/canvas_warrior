@@ -29,27 +29,34 @@ api_url_base = 'http://canvas.colorado.edu/api/v1/'
 headers = { 'Content-Type': 'application/json',
             'Authorization': 'Bearer {0}'.format(api_token)}
 
+
+# Recursive API GET, following header links as long as 'next' exists
+def recursive_api_fetch(url, headers):
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        data_set = json.loads(response.content.decode('utf-8'))
+
+        if response.links.get('next'):
+            next_data = recursive_api_fetch(response.links['next']['url'], headers)
+            data_set = data_set + next_data
+    else:
+        data_set = None
+
+    return data_set
+
+
 # Fetch User Courses
 def get_courses():
     api_url = '{0}courses'.format(api_url_base)
-    courses = requests.get(api_url, headers=headers)
-
-    if courses.status_code == 200:
-        return json.loads(courses.content.decode('utf-8'))
-    else:
-        return None
+    return recursive_api_fetch(api_url, headers=headers)
 
 
 # Fetch User Assignments for a Course
 def get_assignments(course):
     course_id = course['id']
     api_url = '{0}courses/{1}/assignments'.format(api_url_base, course_id)
-    assignments = requests.get(api_url, headers=headers)
-
-    if assignments.status_code == 200:
-        return json.loads(assignments.content.decode('utf-8'))
-    else:
-        return None
+    return recursive_api_fetch(api_url, headers=headers)
 
 
 # Check if Assignment is in taskwarrior
@@ -80,12 +87,14 @@ def assignment_not_yet_due(assignment):
     elif datetime.strptime(due_date, '%Y-%m-%dT%H:%M:%SZ') > now:
         return_value = True     #Not yet due, return true
     else:
-        print("\tassign: ", assignment['name'])
-        print("\t\tnow: ", now)
-        print("\t\tdue: ", datetime.strptime(due_date, '%Y-%m-%dT%H:%M:%SZ'))
         return_value = False    #Due already, return false
 
     return return_value
+
+
+# True if assignment has been submitted
+def assignment_submitted(assignment):
+    return assignment['has_submitted_submissions']
 
 
 # Main Work
@@ -99,7 +108,7 @@ for course in courses:
         assignments = get_assignments(course)
 
         for assignment in assignments:
-            if assignment_not_yet_due(assignment):
+            if assignment_not_yet_due(assignment) and not assignment_submitted(assignment):
                 print('\t{0}'.format(assignment['name']))
                 print('\t\t{0}'.format(assignment['unlock_at']))
                 print('\t\t{0}'.format(assignment['due_at']))
