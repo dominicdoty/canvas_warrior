@@ -4,6 +4,7 @@
 
 import requests
 import json
+from datetime import datetime
 
 # Authentication (currently using user generated token)
 # TODO: Switch this to OAUTH
@@ -40,7 +41,8 @@ def get_courses():
 
 
 # Fetch User Assignments for a Course
-def get_assignments(course_id):
+def get_assignments(course):
+    course_id = course['id']
     api_url = '{0}courses/{1}/assignments'.format(api_url_base, course_id)
     assignments = requests.get(api_url, headers=headers)
 
@@ -60,23 +62,45 @@ def taskwarrior(course_id, assignment_id):
     #else return something?
     return
 
+
+# True if enrolled as student, false if not
+def student_enrolled(course):
+    return (course.get('access_restricted_by_date') == None and
+            course['enrollments'][0]['type'] == 'student' and
+            course['enrollments'][0]['enrollment_state'] == 'active')
+
+
+# True if assignment not due yet or no due date, false if passed
+def assignment_not_yet_due(assignment):
+    now = datetime.now()
+    due_date = assignment.get('due_at')
+
+    if due_date == None:
+        return_value = True     #No due date, return true
+    elif datetime.strptime(due_date, '%Y-%m-%dT%H:%M:%SZ') > now:
+        return_value = True     #Not yet due, return true
+    else:
+        print("\tassign: ", assignment['name'])
+        print("\t\tnow: ", now)
+        print("\t\tdue: ", datetime.strptime(due_date, '%Y-%m-%dT%H:%M:%SZ'))
+        return_value = False    #Due already, return false
+
+    return return_value
+
+
 # Main Work
 courses = get_courses()
 # print(json.dumps(courses, indent=2, separators=(',', ': ')))
 
 # Iterate Over Courses and Get Assignments
 for course in courses:
-    if (course.get('access_restricted_by_date') == None and
-        course['enrollments'][0]['type'] == 'student' and
-        course['enrollments'][0]['enrollment_state'] == 'active'):
-        
+    if student_enrolled(course):
         print(course['name'])
-        assignments = get_assignments(course['id'])
+        assignments = get_assignments(course)
 
         for assignment in assignments:
-            print('\t{0}'.format(assignment['name']))
-            print('\t\t{0}'.format(assignment['unlock_at']))
-            print('\t\t{0}'.format(assignment['due_at']))
-            print('\t\t{0}'.format(assignment['id']))
-
-# write to [canvas: "assignment uuid"]
+            if assignment_not_yet_due(assignment):
+                print('\t{0}'.format(assignment['name']))
+                print('\t\t{0}'.format(assignment['unlock_at']))
+                print('\t\t{0}'.format(assignment['due_at']))
+                print('\t\t{0}'.format(assignment['id']))
