@@ -4,6 +4,8 @@
 
 import requests
 import json
+import subprocess
+from packaging import version
 from datetime import datetime
 
 # Authentication (currently using user generated token)
@@ -28,6 +30,29 @@ api_url_base = 'http://canvas.colorado.edu/api/v1/'
 # Common Auth header to all requests
 headers = { 'Content-Type': 'application/json',
             'Authorization': 'Bearer {0}'.format(api_token)}
+
+
+# Check if taskwarrior version is greater than or equal to some version
+# the script may not work for versions older than this
+def check_taskwarrior_version(check_version):
+    try:
+        process_result = subprocess.run(["task", "--version"], capture_output=True, timeout=2, encoding='utf-8')
+    except:
+        print("FATAL: 'task --version' timed out. Try it yourself and see what goes wrong")
+    else:
+        if version.parse(process_result.stdout) < version.parse(check_version):
+            print("WARNING: taskwarrior version is older than the one used to develop this script. Behavior isn't guaranteed.")
+
+
+# Get all the tasks in taskwarrior
+def tasks_fetch():
+    try:
+        task_proc = subprocess.run(["task", "status:pending", "or", "status:waiting", "export"], capture_output=True, timeout=2)
+    except:
+        print("FATAL: 'task export' timed out. Try it yourself and see what goes wrong")
+        exit()
+    else:
+        return json.loads(task_proc.stdout)
 
 
 # Recursive API GET, following header links as long as 'next' exists
@@ -59,17 +84,6 @@ def get_assignments(course):
     return recursive_api_fetch(api_url, headers=headers)
 
 
-# Check if Assignment is in taskwarrior
-def taskwarrior(course_id, assignment_id):
-    uuid = str(course_id) + str(assignment_id)
-    #check for uuid in taskwarrior files todo or completed
-    #if its there check dates?
-       #if dates and uuid good return None
-       #else check with user to update dates?
-    #else return something?
-    return
-
-
 # True if enrolled as student, false if not
 def student_enrolled(course):
     return (course.get('access_restricted_by_date') == None and
@@ -94,22 +108,83 @@ def assignment_not_yet_due(assignment):
 
 # True if assignment has been submitted
 def assignment_submitted(assignment):
-    return assignment['has_submitted_submissions']
+    course_id = assignment['course_id']
+    assignment_id = assignment['id']
+    url = '{0}courses/{1}/assignments/{2}/submissions/self'.format(api_url_base, course_id, assignment_id)
+    response = requests.get(url, headers=headers)
+    submission = json.loads(response.content.decode('utf-8'))
 
+    if submission['workflow_state'] == "unsubmitted":
+        return False
+    else:
+        return True
+
+
+# Check if Assignment is in taskwarrior
+def task_exists(assignment, taskwarrior_data):
+    canv_uuid = "C" + str(assignment['course_id']) + "A" + str(assignment['id'])
+    #check for uuid in taskwarrior
+    for task in task_json:
+        if task.get('canvas') == canv_uuid:
+            # Task exists
+            return True
+    
+    return False
+
+
+# Returns 'task import' ready JSON of an assignment
+def create_task(assignment):
+    canv_uuid = "C" + str(assignment['course_id']) + "A" + str(assignment['id'])
+    canv_name = assignment['name']
+    canv_due_date = datetime.strptime(assignment['due_at'], '%Y-%m-%dT%H:%M:%SZ')
+    canv_wait_date = datetime.strptime(assignment['unlock_at'], '%Y-%m-%dT%H:%M:%SZ')
+    task = {}
+
+    # Get User Inputs or take defaults
+    task['description'] = input("Description [{0}]: ".format(canv_name)) or canv_name
+    task['project'] = input("Project: ") or None
+    task['canvas'] = canv_uuid
+
+    task['due'] = input("Due Date [{0}]: ".format(canv_due_date)) or datetime.strftime(canv_due_date, '%Y-%m-%d %H:%M:%S')
+    task['wait'] = input("Wait Date [{0}]: ".format(canv_wait_date)) or datetime.strftime(canv_wait_date, '%Y-%m-%d %H:%M:%S')
+
+    # Reformat User Date Overrides
+    task['due'] = datetime.strptime(task['due'], '%Y-%m-%d %H:%M:%S')
+    task['wait'] = datetime.strptime(task['wait'], '%Y-%m-%d %H:%M:%S')
+    task['due'] = datetime.strftime(task['due'], '%Y%m%dT%H%M%SZ')
+    task['wait'] = datetime.strftime(task['wait'], '%Y%m%dT%H%M%SZ')
+    
+    return task
 
 # Main Work
+check_taskwarrior_version("2.5.1")
+task_json = tasks_fetch()
 courses = get_courses()
-# print(json.dumps(courses, indent=2, separators=(',', ': ')))
+import_tasks = []
+# print(json.dumps(task_json, indent=2, separators=(',', ': ')))
 
 # Iterate Over Courses and Get Assignments
+
+del courses[1:]
+
 for course in courses:
     if student_enrolled(course):
-        print(course['name'])
         assignments = get_assignments(course)
 
         for assignment in assignments:
-            if assignment_not_yet_due(assignment) and not assignment_submitted(assignment):
-                print('\t{0}'.format(assignment['name']))
-                print('\t\t{0}'.format(assignment['unlock_at']))
-                print('\t\t{0}'.format(assignment['due_at']))
-                print('\t\t{0}'.format(assignment['id']))
+            if task_exists(assignment, task_json):
+                # Task already exists, update its dates and stuff?
+                print("update: ", assignment['name'])
+            else:
+                # Task does not exist
+                if assignment_not_yet_due(assignment) and not assignment_submitted(assignment):
+                    # Not yet due + not submitted, add
+                    print("add: ", assignment['name'])
+                    import_tasks.append(create_task(assignment))
+                else:
+                    # Overdue or submitted, no task exists
+                    print("ignore: ", assignment['name'])
+
+print(json.dumps(import_tasks, indent=2, separators=(',', ': ')))
+# print("\t", assignment['name'], "\t", assignment['unlock_at'], " ", assignment['due_at'], " ", assignment['id'])
+
