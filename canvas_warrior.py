@@ -15,6 +15,23 @@ from pathlib import Path
 ##          FUNCTIONS
 #####################################
 
+# Yes or no from: https://gist.github.com/garrettdreyfus/8153571
+def yes_or_no(question, default):
+    if default:
+        yes_no_string = ' (Y/n): '
+    else:
+        yes_no_string = ' (y/N): '
+
+    while "the answer is invalid":
+        reply = str(input(question + yes_no_string)).lower().strip()
+        if reply[:1] == 'y':
+            return True
+        elif reply[:1] == 'n':
+            return False
+        elif reply[:1] == "":
+            return default
+
+
 # Check if taskwarrior version is greater than or equal to some version
 def check_taskwarrior_version(check_version):
     try:
@@ -142,7 +159,7 @@ def task_exists(assignment, taskwarrior_data):
     for task in task_json:
         if task.get('canvas') == canv_uuid:
             # Task exists
-            return True
+            return task
     
     return False
 
@@ -188,6 +205,49 @@ def create_task(assignment):
     return task
 
 
+# Returns an updated task JSON after working with the user
+def task_update(assignment, existing_task):
+    canv_name = assignment['name']
+    project_tag = settings.get(str(assignment['course_id']))
+    print("\nChecking Existing Assignment {0}".format(canv_name))
+
+    updated_task = existing_task
+    updated_flag = False
+
+    # Check against existing task_json
+    if existing_task['description'] != canv_name:
+        if yes_or_no("\tDescription New:{0}, Curr:{1}, Update?".format(canv_name, existing_task['description']), False):
+            updated_task['description'] = canv_name
+            updated_flag = True
+
+    if existing_task['project'] != project_tag:
+        if yes_or_no("\tProject New:{0}, Curr:{1}, Update?".format(project_tag, existing_task['project']), False):
+            updated_task['project'] = project_tag
+            updated_flag = True
+
+    # TODO: Fix this so it can give due dates to tasks that don't have one yet
+    if assignment['due_at'] != None and existing_task.get('due') != None:
+        canv_due_date = datetime.strptime(assignment['due_at'], '%Y-%m-%dT%H:%M:%SZ')
+        task_due_date = datetime.strptime(existing_task['due'], '%Y%m%dT%H%M%SZ')
+        if task_due_date != canv_due_date:
+            if yes_or_no("\tDue Date New:{0}, Curr:{1}, Update?".format(canv_due_date, task_due_date), False):
+                updated_task['due'] = datetime.strftime(canv_due_date, '%Y%m%dT%H%M%SZ')
+                updated_flag = True
+
+    if assignment['unlock_at'] != None and existing_task.get('wait') != None:
+        canv_wait_date = datetime.strptime(assignment['unlock_at'], '%Y-%m-%dT%H:%M:%SZ')
+        task_wait_date = datetime.strptime(existing_task['wait'], '%Y%m%dT%H%M%SZ')
+        if task_wait_date != canv_wait_date:
+            if yes_or_no("\tUnlock At New:{0}, Curr:{1}, Update?".format(canv_wait_date, task_wait_date), False):
+                updated_task['wait'] = datetime.strftime(canv_wait_date, '%Y%m%dT%H%M%SZ')
+                updated_flag = True
+
+    if updated_flag:
+        return updated_task
+    else:
+        return None
+
+
 #####################################
 ##          MAIN
 #####################################
@@ -213,22 +273,24 @@ for course in courses:
         assignments = get_assignments(course)
 
         for assignment in assignments:
-            if task_exists(assignment, task_json):
+            existing_task = task_exists(assignment, task_json)
+            if existing_task:
                 # Task already exists, update its dates and stuff?
-                # TODO: Add checking for updates to existing tasks
-                print("update: ", assignment['name'])
+                updated_task = task_update(assignment, existing_task)
+                import_tasks += [updated_task] if updated_task is not None else [] 
             else:
                 # Task does not exist
                 if assignment_not_yet_due(assignment) and not assignment_submitted(assignment):
                     # Not yet due + not submitted, add
-                    print("add: ", assignment['name'])
                     import_tasks.append(create_task(assignment))
 
 # Check for changes to project associations and rewrite if so
 settings_put(settings)
 
+print(import_tasks)
+
 # Add tasks to taskwarrior
 if len(import_tasks) == 0:
-    print("Nothing to Import")
+    print("\nNothing to Import")
 else:
-    subprocess.run(["task", "import"], input=json.dumps(import_tasks), output="/dev/null", encoding='utf-8')
+    subprocess.run(["task", "import"], input=json.dumps(import_tasks), encoding='utf-8')
