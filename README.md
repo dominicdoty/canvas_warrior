@@ -18,17 +18,24 @@ Desired additions after core functionality is achieved include:
  * A non-interactive mode, with options to print all changes that would be made, and to make those changes accepting all default values
 
 ## Setup
+All user settings are in ~/.task/canvas.json in json format. Below are example settings.
+
 ### API URL
-Right now the API URL for University of Colorado, Boulder is hardcoded in. You will need to change it to your URL.
+"api_url":"http://canvas.colorado.edu/api/v1/"
 
 ### Development API Key
-The script currently uses [developer keys](https://canvas.instructure.com/doc/api/file.developer_keys.html) while its under development and not meant for general distribution. It expects the key to be in ~/canvas_access.token .
+The script currently uses [developer keys](https://canvas.instructure.com/doc/api/file.developer_keys.html) while its under development and not meant for general distribution.
 
-Eventually I will move to OAUTH once the script works correctly.
+"api_token":"randomfaketoken~asdfasdfasdfasdfasdf"
+
+### Course - Project Associations
+The script will look for course id numbers in this file and use them to auto assign projects in taskwarrior. This is optional since the script will fill these in on its own as you use it.
+
+"51572":"PCB_Class"
 
 ### Taskwarrior Config
-Need to add to .taskrc:
+This script uses user defined attributes in taskwarrior. Taskwarrior will preserve our attributes even if it doesn't know what they are though, so this step is optional.
+
+Add to .taskrc:
  * uda.canvas.type=string
  * uda.canvas.label=Canvas UUID
-
-This allows tracking of associations between canvas assignments and taskwarrior tasks. Later I'll add a check/add for this in the script.

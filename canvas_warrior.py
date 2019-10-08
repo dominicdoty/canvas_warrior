@@ -12,36 +12,6 @@ from pathlib import Path
 
 
 #####################################
-##          COMMON JUNK
-#####################################
-
-
-# Authentication (currently using user generated token)
-# TODO: Switch this to OAUTH
-home = str(Path.home())
-try:
-    f=open("{0}/.task/canvas_access.token".format(home), "r")
-except:
-    print('FATAL: api_token not found or no read permissions in {0}/canvas_access.token'.format(home))
-    exit()
-else: 
-    if f.mode == 'r':
-        api_token = f.read().rstrip()
-        [line.rstrip('\n') for line in api_token]
-        print('api_token = {0}'.format(api_token))
-
-    f.close()
-
-# Common URL to all requests
-api_url_base = 'http://canvas.colorado.edu/api/v1/'
-
-
-# Common Auth header to all requests
-headers = { 'Content-Type': 'application/json',
-            'Authorization': 'Bearer {0}'.format(api_token)}
-
-
-#####################################
 ##          FUNCTIONS
 #####################################
 
@@ -67,35 +37,36 @@ def tasks_fetch():
         return json.loads(task_proc.stdout)
 
 
-# Returns a dict of associations between course id and project tag
-def projects_fetch():
+# Returns a dict of settings from ~/.task/canvas.json
+def settings_fetch():
     home = str(Path.home())
     try:
         f=open("{0}/.task/canvas.json".format(home), "r")
     except:
-        print("WARNING: No 'canvas.json' config found in '~/.task'")
-        return_value = None
-    else: 
+        print("ERROR: No 'canvas.json' config found in '~/.task'")
+        exit()
+    else:
         if f.mode == 'r':
-            projects_raw = f.read().rstrip()
-            return_value = json.loads(projects_raw)
+            settings_raw = f.read()
+            settings = json.loads(settings_raw)
         else:
             print("ERROR: Cannot read 'canvas.json' in '~/.task'")    
-            return_value = None
+            settings = None
 
     f.close()
-    return return_value
+    return settings
 
 
 # Writes json of associations between course id and project tag to canvas.json
-def projects_put(projects_associations):
+def settings_put(settings):
     home = str(Path.home())
     try:
         f=open("{0}/.task/canvas.json".format(home), "w")
     except:
         print("WARNING: Failed to write 'canvas.json' config in '~/.task'")
     else: 
-        f.write(json.dumps(projects_associations))
+        f.write(json.dumps(settings, indent=3, separators=(',', ': ')))
+
     f.close()
 
 
@@ -179,7 +150,7 @@ def task_exists(assignment, taskwarrior_data):
 # Returns 'task import' ready JSON of an assignment
 def create_task(assignment):
     canv_course_id = str(assignment['course_id'])
-    project_tag = project_associations.get(canv_course_id)
+    project_tag = settings.get(canv_course_id)
     canv_assign_id = str(assignment['id'])
     canv_uuid = "C" + canv_course_id + "A" + canv_assign_id
     canv_name = assignment['name']
@@ -205,7 +176,7 @@ def create_task(assignment):
 
     # Check for Changing Course-Project Associations and Update Config File
     if task['project'] != project_tag:
-        project_associations[canv_course_id] = task['project']
+        settings[canv_course_id] = task['project']
 
     # TODO: Handle this with taskwarrior date styles (friday, today, etc) cause this stinks
     # Reformat User Date Overrides
@@ -221,14 +192,19 @@ def create_task(assignment):
 ##          MAIN
 #####################################
 
-check_taskwarrior_version("2.5.1")
-project_associations = projects_fetch()
-task_json = tasks_fetch()
+check_taskwarrior_version("2.5.1")          # check if old version
+settings = settings_fetch()                 # get settings file
+api_token = settings['api_token']           # easy API token name
+api_url_base = settings['api_url']          # easy API URL
+task_json = tasks_fetch()                   # get taskwarrior waiting and pending tasks
+import_tasks = []                           # declare empty array of tasks to add
+
+# Common Auth header to all requests
+headers = { 'Content-Type': 'application/json',
+            'Authorization': 'Bearer {0}'.format(api_token)}
+
+# Fetch User Courses
 courses = get_courses()
-import_tasks = []
-
-# print(json.dumps(task_json, indent=2, separators=(',', ': ')))
-
 
 # Iterate Over Courses and Get Assignments
 # TODO: Parallelize all this to hide API latency
@@ -239,6 +215,7 @@ for course in courses:
         for assignment in assignments:
             if task_exists(assignment, task_json):
                 # Task already exists, update its dates and stuff?
+                # TODO: Add checking for updates to existing tasks
                 print("update: ", assignment['name'])
             else:
                 # Task does not exist
@@ -248,7 +225,10 @@ for course in courses:
                     import_tasks.append(create_task(assignment))
 
 # Check for changes to project associations and rewrite if so
-projects_put(project_associations)
+settings_put(settings)
 
 # Add tasks to taskwarrior
-subprocess.run(["task", "import"], input=json.dumps(import_tasks), encoding='utf-8')
+if len(import_tasks) == 0:
+    print("Nothing to Import")
+else:
+    subprocess.run(["task", "import"], input=json.dumps(import_tasks), output="/dev/null", encoding='utf-8')
